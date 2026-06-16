@@ -2,7 +2,7 @@ name: Refresh News Aggregator
 
 on:
   schedule:
-    - cron: '0 * * * *' # Runs exactly every hour
+    - cron: '0 */3 * * *' # Runs exactly every hour
   workflow_dispatch: # Allows you to force run it manually with a button click
 
 permissions:
