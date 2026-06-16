@@ -108,7 +108,7 @@ html_content = f"""<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>root@news:~# cat latest_feeds</h1>
+    <h1>//r00t n3ws//</h1>
     <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {current_time} | NODES: {len(feeds)}</div>
     <ul>
 """
