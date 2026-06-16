@@ -1,4 +1,5 @@
-# === ARTIFICIAL INTELLIGENCE ===https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
+# === ARTIFICIAL INTELLIGENCE ===
+https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml
 https://feeds.bbci.co.uk/news/rss.xml
 https://news.ycombinator.com/rss
 https://techcrunch.com/feed/
