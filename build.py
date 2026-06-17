@@ -164,7 +164,7 @@ html_content = f"""<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>root@news:~# cat latest_feeds</h1>
+    <h1>r00t n3ws</h1>
     <div class="quote-box">{selected_quote}</div>
     <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {eastern_time}</div>
 """
