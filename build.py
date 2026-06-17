@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 import xml.etree.ElementTree as ET
 import urllib.request
 import random
+import email.utils
 
 # Matrix Quote Engine
 QUOTES = [
@@ -19,71 +20,78 @@ QUOTES = [
 ]
 selected_quote = random.choice(QUOTES)
 
-articles_by_category = {}
-current_category = "UNCATEGORIZED"
+all_articles = []
+target_timezone = ZoneInfo("America/New_York")
 
-# Read feeds and parse on the fly to preserve category order
+# Read feeds
 with open("feeds.txt", "r", encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        
-        # If the line is a comment/category marker
-        if line.startswith("#"):
-            current_category = line.replace("#", "").strip()
-            if current_category and current_category not in articles_by_category:
-                articles_by_category[current_category] = []
-            continue
+    # Read URLs and ignore comments (#) or empty lines
+    feeds = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
 
-        # If it's a URL, parse it under the current category
-        url = line
-        try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                xml_data = response.read()
-                root = ET.fromstring(xml_data)
+# Fetch and parse feeds
+for url in feeds:
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            xml_data = response.read()
+            root = ET.fromstring(xml_data)
+            
+            channel_title = root.find('.//channel/title').text or "Unknown Source"
+            
+            # STRICT LIMIT: Slice down to only pull the top 3 items per source
+            items = root.findall('.//item')[:3]
+            
+            for item in items:
+                title = item.find('title').text
+                link = item.find('link').text
                 
-                channel_title = root.find('.//channel/title').text or "Unknown Source"
-                items = root.findall('.//item')[:5]
+                # Timestamp parsing logic
+                pub_date_raw = item.find('pubDate')
+                if pub_date_raw is not None and pub_date_raw.text:
+                    try:
+                        # Convert RSS time string into a timezone-aware datetime object
+                        dt = email.utils.parsedate_to_datetime(pub_date_raw.text)
+                        # Normalize time to Eastern Time for consistent sorting
+                        dt_eastern = dt.astimezone(target_timezone)
+                    except Exception:
+                        dt_eastern = datetime.datetime.now(target_timezone)
+                else:
+                    dt_eastern = datetime.datetime.now(target_timezone)
+
+                # Tag Extraction Logic
+                tags = []
+                category_elements = item.findall('category')
+                for cat in category_elements:
+                    if cat.text:
+                        cleaned_tag = cat.text.strip().lower()
+                        if cleaned_tag and "/" not in cleaned_tag and len(cleaned_tag) < 25:
+                            if cleaned_tag not in tags:
+                                tags.append(cleaned_tag)
                 
-                if current_category not in articles_by_category:
-                    articles_by_category[current_category] = []
+                tags = tags[:5]
 
-                for item in items:
-                    title = item.find('title').text
-                    link = item.find('link').text
-                    
-                    # Tag/Category Extraction Logic
-                    tags = []
-                    category_elements = item.findall('category')
-                    for cat in category_elements:
-                        if cat.text:
-                            cleaned_tag = cat.text.strip().lower()
-                            if cleaned_tag and "/" not in cleaned_tag and len(cleaned_tag) < 25:
-                                if cleaned_tag not in tags:
-                                    tags.append(cleaned_tag)
-                    
-                    tags = tags[:5]
+                all_articles.append({
+                    "title": title, 
+                    "link": link, 
+                    "source": channel_title,
+                    "tags": tags,
+                    "datetime": dt_eastern
+                })
+    except Exception as e:
+        print(f"Error parsing {url}: {e}")
 
-                    articles_by_category[current_category].append({
-                        "title": title, 
-                        "link": link, 
-                        "source": channel_title,
-                        "tags": tags
-                    })
-        except Exception as e:
-            print(f"Error parsing {url}: {e}")
+# CHRONOLOGICAL SORT: Newest posts at the very top of the feed
+all_articles.sort(key=lambda x: x["datetime"], reverse=True)
 
-# Generate HTML with Eastern Time conversion
-eastern_time = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M %p ET")
+# Generate HTML
+current_time = datetime.datetime.now(target_timezone).strftime("%Y-%m-%d %I:%M %p ET")
 
 html_content = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Terminal // News_Feed</title>
+    <title>Terminal // Chronological_Feed</title>
     <style>
         body {{ 
             font-family: 'Courier New', Courier, monospace; 
@@ -113,24 +121,14 @@ html_content = f"""<!DOCTYPE html>
             font-size: 0.95rem;
             word-wrap: break-word;
         }}
-        .category-header {{
-            font-size: 1.1rem;
-            color: #00ff41;
-            margin-top: 40px;
-            margin-bottom: 15px;
-            font-weight: bold;
-            text-shadow: 0 0 3px rgba(0, 255, 65, 0.3);
-        }}
-        .meta {{ color: #008f11; margin-bottom: 20px; font-size: 0.85rem; border-top: 1px dashed #008f11; padding-top: 5px; }}
-        ul {{ list-style-type: none; padding: 0; margin-bottom: 30px; }}
+        .meta {{ color: #008f11; margin-bottom: 30px; font-size: 0.85rem; border-top: 1px dashed #008f11; padding-top: 5px; }}
+        ul {{ list-style-type: none; padding: 0; margin-top: 20px; }}
         li {{ 
             margin-bottom: 18px; 
             display: flex; 
             flex-direction: column;
             align-items: flex-start; 
         }}
-        
-        /* Updated row setup with faint white dotted line boundary */
         .link-row {{
             display: flex;
             align-items: flex-start;
@@ -140,7 +138,6 @@ html_content = f"""<!DOCTYPE html>
         }}
         .link-row::before {{ content: "> "; margin-right: 8px; color: #008f11; flex-shrink: 0; }}
         
-        /* Links are forced to ALL CAPS */
         a {{ 
             color: #00ff41; 
             text-decoration: none; 
@@ -149,6 +146,7 @@ html_content = f"""<!DOCTYPE html>
         a:hover {{ background-color: #00ff41; color: #000; }}
         .source {{ color: #008f11; font-size: 0.8rem; margin-left: 10px; white-space: nowrap; }}
         
+        /* Styled time string layout next to tags */
         .tag-row {{
             margin-left: 20px;
             font-size: 0.75rem;
@@ -157,37 +155,33 @@ html_content = f"""<!DOCTYPE html>
             margin-top: 4px;
             word-wrap: break-word;
         }}
-        .tag {{
-            margin-right: 8px;
-            display: inline-block;
-        }}
     </style>
 </head>
 <body>
-    <h1>r00t n3ws</h1>
+    <h1>root@news:~# cat unified_timeline</h1>
     <div class="quote-box">{selected_quote}</div>
-    <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {eastern_time}</div>
+    <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {current_time}</div>
+    
+    <ul>
 """
 
-for cat_name, articles in articles_by_category.items():
-    if not articles: 
-        continue
-        
-    html_content += f'    <div class="category-header">{cat_name}</div>\n    <ul>\n'
+# Render the single unified timeline list
+for art in all_articles:
+    time_str = art["datetime"].strftime("%m/%d %I:%M %p")
+    html_content += f'        <li>\n            <div class="link-row"><a href="{art["link"]}" target="_blank">{art["title"]}</a><span class="source">[{art["source"]}]</span></div>\n'
     
-    for art in articles:
-        html_content += f'        <li>\n            <div class="link-row"><a href="{art["link"]}" target="_blank">{art["title"]}</a><span class="source">[{art["source"]}]</span></div>\n'
-        if art["tags"]:
-            tag_strings = [f"#{t}" for t in art["tags"]]
-            html_content += f'            <div class="tag-row">tags: {" ".join(tag_strings)}</div>\n'
-        html_content += "        </li>\n"
+    # Render time badge and optional tags directly underneath
+    tag_build = f"posted: {time_str}"
+    if art["tags"]:
+        tag_build += f" | tags: {' '.join([f'#{t}' for t in art['tags']])}"
         
-    html_content += "    </ul>\n"
+    html_content += f'            <div class="tag-row">{tag_build}</div>\n        </li>\n'
 
-html_content += """</body>
+html_content += """    </ul>
+</body>
 </html>"""
 
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("All modifications applied. Site compilation sequence complete.")
+print("Unified chronological timeline compiled successfully.")
