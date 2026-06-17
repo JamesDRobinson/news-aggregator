@@ -76,7 +76,6 @@ with open("feeds.txt", "r", encoding="utf-8") as f:
             print(f"Error parsing {url}: {e}")
 
 # Generate HTML with Eastern Time conversion
-# ZoneInfo('America/New_York') automatically accounts for EST vs EDT (Daylight Saving) Changes
 eastern_time = datetime.datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %I:%M %p ET")
 
 html_content = f"""<!DOCTYPE html>
@@ -130,21 +129,32 @@ html_content = f"""<!DOCTYPE html>
             flex-direction: column;
             align-items: flex-start; 
         }}
+        
+        /* Updated row setup with faint white dotted line boundary */
         .link-row {{
             display: flex;
             align-items: flex-start;
             width: 100%;
+            border-bottom: 1px dotted rgba(255, 255, 255, 0.15);
+            padding-bottom: 4px;
         }}
         .link-row::before {{ content: "> "; margin-right: 8px; color: #008f11; flex-shrink: 0; }}
-        a {{ color: #00ff41; text-decoration: none; }}
+        
+        /* Links are forced to ALL CAPS */
+        a {{ 
+            color: #00ff41; 
+            text-decoration: none; 
+            text-transform: uppercase;
+        }}
         a:hover {{ background-color: #00ff41; color: #000; }}
         .source {{ color: #008f11; font-size: 0.8rem; margin-left: 10px; white-space: nowrap; }}
+        
         .tag-row {{
             margin-left: 20px;
             font-size: 0.75rem;
             color: #008f11;
             opacity: 0.8;
-            margin-top: 2px;
+            margin-top: 4px;
             word-wrap: break-word;
         }}
         .tag {{
@@ -154,7 +164,7 @@ html_content = f"""<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>r00t n3ws</h1>
+    <h1>root@news:~# cat latest_feeds</h1>
     <div class="quote-box">{selected_quote}</div>
     <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {eastern_time}</div>
 """
@@ -180,4 +190,4 @@ html_content += """</body>
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("Categorized site with ET timestamp built successfully!")
+print("All modifications applied. Site compilation sequence complete.")
