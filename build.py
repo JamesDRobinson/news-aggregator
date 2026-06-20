@@ -22,10 +22,31 @@ selected_quote = random.choice(QUOTES)
 
 all_articles = []
 target_timezone = ZoneInfo("America/New_York")
+now_eastern = datetime.datetime.now(target_timezone)
+
+# Helper function to compute relative time intervals
+def compute_time_ago(article_dt, current_dt):
+    diff = current_dt - article_dt
+    seconds = diff.total_seconds()
+    
+    if seconds < 0:
+        return "just now"
+        
+    minutes = int(seconds // 60)
+    hours = int(minutes // 60)
+    days = int(hours // 24)
+    
+    if days > 0:
+        return f"{days}d ago"
+    elif hours > 0:
+        return f"{hours}h ago"
+    elif minutes > 0:
+        return f"{minutes}m ago"
+    else:
+        return "just now"
 
 # Read feeds
 with open("feeds.txt", "r", encoding="utf-8") as f:
-    # Read URLs and ignore comments (#) or empty lines
     feeds = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
 
 # Fetch and parse feeds
@@ -38,7 +59,10 @@ for url in feeds:
             
             channel_title = root.find('.//channel/title').text or "Unknown Source"
             
-            # STRICT LIMIT: Slice down to only pull the top 3 items per source
+            # Clean up the channel titles for standard clean domain looks
+            channel_title = channel_title.replace(" Feed", "").replace(" RSS Feed", "").strip()
+            
+            # Pull only top 3 items per source
             items = root.findall('.//item')[:3]
             
             for item in items:
@@ -49,14 +73,12 @@ for url in feeds:
                 pub_date_raw = item.find('pubDate')
                 if pub_date_raw is not None and pub_date_raw.text:
                     try:
-                        # Convert RSS time string into a timezone-aware datetime object
                         dt = email.utils.parsedate_to_datetime(pub_date_raw.text)
-                        # Normalize time to Eastern Time for consistent sorting
                         dt_eastern = dt.astimezone(target_timezone)
                     except Exception:
-                        dt_eastern = datetime.datetime.now(target_timezone)
+                        dt_eastern = now_eastern
                 else:
-                    dt_eastern = datetime.datetime.now(target_timezone)
+                    dt_eastern = now_eastern
 
                 # Tag Extraction Logic
                 tags = []
@@ -80,11 +102,11 @@ for url in feeds:
     except Exception as e:
         print(f"Error parsing {url}: {e}")
 
-# CHRONOLOGICAL SORT: Newest posts at the very top of the feed
+# Chronological sort (Newest at top)
 all_articles.sort(key=lambda x: x["datetime"], reverse=True)
 
 # Generate HTML
-current_time = datetime.datetime.now(target_timezone).strftime("%Y-%m-%d %I:%M %p ET")
+current_time_str = now_eastern.strftime("%Y-%m-%d %I:%M %p ET")
 
 html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -144,9 +166,12 @@ html_content = f"""<!DOCTYPE html>
             text-transform: uppercase;
         }}
         a:hover {{ background-color: #00ff41; color: #000; }}
+        
+        /* Visited link state: Dims clicked titles down to code-green to keep things readable */
+        a:visited {{ color: #005f0c; }}
+        
         .source {{ color: #008f11; font-size: 0.8rem; margin-left: 10px; white-space: nowrap; }}
         
-        /* Styled time string layout next to tags */
         .tag-row {{
             margin-left: 20px;
             font-size: 0.75rem;
@@ -158,20 +183,22 @@ html_content = f"""<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>root@news:</h1>
+    <h1>root@news:~# cat unified_timeline</h1>
     <div class="quote-box">{selected_quote}</div>
-    <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {current_time}</div>
+    <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {current_time_str}</div>
     
     <ul>
 """
 
-# Render the single unified timeline list
+# Render loop
 for art in all_articles:
-    time_str = art["datetime"].strftime("%m/%d %I:%M %p")
+    # Calculate the fresh time badge relative to right now
+    time_badge = compute_time_ago(art["datetime"], now_eastern)
+    
     html_content += f'        <li>\n            <div class="link-row"><a href="{art["link"]}" target="_blank">{art["title"]}</a><span class="source">[{art["source"]}]</span></div>\n'
     
-    # Render time badge and optional tags directly underneath
-    tag_build = f"posted: {time_str}"
+    # Output layout containing relative interval data
+    tag_build = f"posted: {time_badge}"
     if art["tags"]:
         tag_build += f" | tags: {' '.join([f'#{t}' for t in art['tags']])}"
         
@@ -184,4 +211,4 @@ html_content += """    </ul>
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("Unified chronological timeline compiled successfully.")
+print("Chronological site featuring relative time structures compiled successfully.")
