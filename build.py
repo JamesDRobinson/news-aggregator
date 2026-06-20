@@ -240,7 +240,7 @@ html_content = f"""<!DOCTYPE html>
     </style>
 </head>
 <body>
-    <h1>root@news:~# cat unified_timeline</h1>
+    <h1>news</h1>
     <div class="quote-box">{selected_quote}</div>
     <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {current_time_str}</div>
     
