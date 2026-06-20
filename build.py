@@ -22,6 +22,7 @@ QUOTES = [
 selected_quote = random.choice(QUOTES)
 
 all_articles = []
+unique_sources = set()  # Track all discovered clean domains for the dynamic header filter
 target_timezone = ZoneInfo("America/New_York")
 now_eastern = datetime.datetime.now(target_timezone)
 
@@ -48,25 +49,18 @@ def compute_time_ago(article_dt, current_dt):
 
 # Helper function to clean and strip down source names to clean domains
 def strip_to_clean_domain(channel_title, feed_url):
-    # Step 1: Force lowercase and remove common clutter phrases
     cleaned = channel_title.lower()
     cleaned = re.sub(r'(\brss\b|\bfeed\b|\bofficial\b|\bnews\b|\bblog\b)', '', cleaned)
-    
-    # Step 2: Remove special characters, leaving spaces and alphanumeric strings
     cleaned = re.sub(r'[^a-z0-9\s\.]', '', cleaned).strip()
     cleaned = re.sub(r'\s+', ' ', cleaned)
     
-    # Step 3: If the title is now empty or too generic, extract domain directly from URL
     if not cleaned or len(cleaned) < 3 or cleaned in ['unknown source', 'home']:
         domain_match = re.search(r'https?://(?:www\.)?([^/]+)', feed_url)
         if domain_match:
             return domain_match.group(1).lower()
         return "unknown"
         
-    # Step 4: Format explicit channel identities to clean asset styles
-    # If it's multiple clean text words (e.g. "center for a stateless society"), join them cleanly
     if " " in cleaned:
-        # Check if an absolute short token exists or make it a unified terminal handle
         if "stateless society" in cleaned or "c4ss" in cleaned:
             return "c4ss.org"
         if "crimethinc" in cleaned:
@@ -90,18 +84,16 @@ for url in feeds:
             root = ET.fromstring(xml_data)
             
             raw_title = root.find('.//channel/title').text or "Unknown Source"
-            
-            # Apply domain sanity stripping matching terminal specs
             clean_source = strip_to_clean_domain(raw_title, url)
             
-            # Pull only top 3 items per source
-            items = root.findall('.//item')[:3]
+            # Add to our filter switch tracking set
+            unique_sources.add(clean_source)
             
+            items = root.findall('.//item')[:3]
             for item in items:
                 title = item.find('title').text
                 link = item.find('link').text
                 
-                # Timestamp parsing logic
                 pub_date_raw = item.find('pubDate')
                 if pub_date_raw is not None and pub_date_raw.text:
                     try:
@@ -112,7 +104,6 @@ for url in feeds:
                 else:
                     dt_eastern = now_eastern
 
-                # Tag Extraction Logic
                 tags = []
                 category_elements = item.findall('category')
                 for cat in category_elements:
@@ -121,7 +112,6 @@ for url in feeds:
                         if cleaned_tag and "/" not in cleaned_tag and len(cleaned_tag) < 25:
                             if cleaned_tag not in tags:
                                 tags.append(cleaned_tag)
-                
                 tags = tags[:5]
 
                 all_articles.append({
@@ -139,6 +129,14 @@ all_articles.sort(key=lambda x: x["datetime"], reverse=True)
 
 # Generate HTML
 current_time_str = now_eastern.strftime("%Y-%m-%d %I:%M %p ET")
+
+# Sort unique sources alphabetically for clean layout placement
+sorted_sources = sorted(list(unique_sources))
+
+# Build out the text-toggles bar HTML
+toggle_switches_html = ""
+for source in sorted_sources:
+    toggle_switches_html += f'<span class="filter-btn active" onclick="toggleSource(\'{source}\', this)">[x] {source}</span> '
 
 html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -175,7 +173,30 @@ html_content = f"""<!DOCTYPE html>
             font-size: 0.95rem;
             word-wrap: break-word;
         }}
-        .meta {{ color: #008f11; margin-bottom: 30px; font-size: 0.85rem; border-top: 1px dashed #008f11; padding-top: 5px; }}
+        .meta {{ color: #008f11; margin-bottom: 15px; font-size: 0.85rem; border-top: 1px dashed #008f11; padding-top: 5px; }}
+        
+        /* Terminal Source Filters bar */
+        .filter-bar {{
+            font-size: 0.8rem;
+            color: #008f11;
+            margin-bottom: 30px;
+            word-wrap: break-word;
+            line-height: 2.0;
+        }}
+        .filter-btn {{
+            margin-right: 12px;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }}
+        .filter-btn.active {{
+            color: #00ff41;
+            text-shadow: 0 0 2px rgba(0, 255, 65, 0.4);
+        }}
+        .filter-btn.inactive {{
+            color: #00330b;
+        }}
+        
         ul {{ list-style-type: none; padding: 0; margin-top: 20px; }}
         li {{ 
             margin-bottom: 18px; 
@@ -200,7 +221,6 @@ html_content = f"""<!DOCTYPE html>
         a:hover {{ background-color: #00ff41; color: #000; }}
         a:visited {{ color: #005f0c; }}
         
-        /* Fixed Source Label style to ensure domain text handles look sharp */
         .source {{ 
             color: #008f11; 
             font-size: 0.8rem; 
@@ -224,6 +244,10 @@ html_content = f"""<!DOCTYPE html>
     <div class="quote-box">{selected_quote}</div>
     <div class="meta">SYS_STATUS: ONLINE | TIMESTAMP: {current_time_str}</div>
     
+    <div class="filter-bar">
+        <span>FILTER_FLAGS: </span>{toggle_switches_html}
+    </div>
+    
     <ul>
 """
 
@@ -231,7 +255,8 @@ html_content = f"""<!DOCTYPE html>
 for art in all_articles:
     time_badge = compute_time_ago(art["datetime"], now_eastern)
     
-    html_content += f'        <li>\n            <div class="link-row"><a href="{art["link"]}" target="_blank">{art["title"]}</a><span class="source">[{art["source"]}]</span></div>\n'
+    # Notice the data-source attribute added to the <li> container below
+    html_content += f'        <li data-source="{art["source"]}">\n            <div class="link-row"><a href="{art["link"]}" target="_blank">{art["title"]}</a><span class="source">[{art["source"]}]</span></div>\n'
     
     tag_build = f"posted: {time_badge}"
     if art["tags"]:
@@ -240,10 +265,31 @@ for art in all_articles:
     html_content += f'            <div class="tag-row">{tag_build}</div>\n        </li>\n'
 
 html_content += """    </ul>
+
+    <script>
+        function toggleSource(sourceName, element) {
+            const isCurrentlyActive = element.classList.contains('active');
+            const articles = document.querySelectorAll('li[data-source="' + sourceName + '"]');
+            
+            if (isCurrentlyActive) {
+                // Turn feed off
+                element.classList.remove('active');
+                element.classList.add('inactive');
+                element.innerText = '[ ] ' + sourceName;
+                articles.forEach(el => el.style.display = 'none');
+            } else {
+                // Turn feed back on
+                element.classList.remove('inactive');
+                element.classList.add('active');
+                element.innerText = '[x] ' + sourceName;
+                articles.forEach(el => el.style.display = 'flex');
+            }
+        }
+    </script>
 </body>
 </html>"""
 
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("Timeline compiled successfully with domain sanity parsing rules.")
+print("Timeline compiled successfully with integrated JavaScript filtering matrices.")
