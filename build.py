@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 import urllib.request
 import random
 import email.utils
+import re
 
 # Matrix Quote Engine
 QUOTES = [
@@ -45,6 +46,37 @@ def compute_time_ago(article_dt, current_dt):
     else:
         return "just now"
 
+# Helper function to clean and strip down source names to clean domains
+def strip_to_clean_domain(channel_title, feed_url):
+    # Step 1: Force lowercase and remove common clutter phrases
+    cleaned = channel_title.lower()
+    cleaned = re.sub(r'(\brss\b|\bfeed\b|\bofficial\b|\bnews\b|\bblog\b)', '', cleaned)
+    
+    # Step 2: Remove special characters, leaving spaces and alphanumeric strings
+    cleaned = re.sub(r'[^a-z0-9\s\.]', '', cleaned).strip()
+    cleaned = re.sub(r'\s+', ' ', cleaned)
+    
+    # Step 3: If the title is now empty or too generic, extract domain directly from URL
+    if not cleaned or len(cleaned) < 3 or cleaned in ['unknown source', 'home']:
+        domain_match = re.search(r'https?://(?:www\.)?([^/]+)', feed_url)
+        if domain_match:
+            return domain_match.group(1).lower()
+        return "unknown"
+        
+    # Step 4: Format explicit channel identities to clean asset styles
+    # If it's multiple clean text words (e.g. "center for a stateless society"), join them cleanly
+    if " " in cleaned:
+        # Check if an absolute short token exists or make it a unified terminal handle
+        if "stateless society" in cleaned or "c4ss" in cleaned:
+            return "c4ss.org"
+        if "crimethinc" in cleaned:
+            return "crimethinc.com"
+        if "one championship" in cleaned or "one fc" in cleaned:
+            return "onefc.com"
+        return cleaned.replace(" ", ".")
+        
+    return cleaned
+
 # Read feeds
 with open("feeds.txt", "r", encoding="utf-8") as f:
     feeds = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
@@ -57,10 +89,10 @@ for url in feeds:
             xml_data = response.read()
             root = ET.fromstring(xml_data)
             
-            channel_title = root.find('.//channel/title').text or "Unknown Source"
+            raw_title = root.find('.//channel/title').text or "Unknown Source"
             
-            # Clean up the channel titles for standard clean domain looks
-            channel_title = channel_title.replace(" Feed", "").replace(" RSS Feed", "").strip()
+            # Apply domain sanity stripping matching terminal specs
+            clean_source = strip_to_clean_domain(raw_title, url)
             
             # Pull only top 3 items per source
             items = root.findall('.//item')[:3]
@@ -95,7 +127,7 @@ for url in feeds:
                 all_articles.append({
                     "title": title, 
                     "link": link, 
-                    "source": channel_title,
+                    "source": clean_source,
                     "tags": tags,
                     "datetime": dt_eastern
                 })
@@ -166,11 +198,16 @@ html_content = f"""<!DOCTYPE html>
             text-transform: uppercase;
         }}
         a:hover {{ background-color: #00ff41; color: #000; }}
-        
-        /* Visited link state: Dims clicked titles down to code-green to keep things readable */
         a:visited {{ color: #005f0c; }}
         
-        .source {{ color: #008f11; font-size: 0.8rem; margin-left: 10px; white-space: nowrap; }}
+        /* Fixed Source Label style to ensure domain text handles look sharp */
+        .source {{ 
+            color: #008f11; 
+            font-size: 0.8rem; 
+            margin-left: 10px; 
+            white-space: nowrap;
+            text-transform: lowercase;
+        }}
         
         .tag-row {{
             margin-left: 20px;
@@ -192,12 +229,10 @@ html_content = f"""<!DOCTYPE html>
 
 # Render loop
 for art in all_articles:
-    # Calculate the fresh time badge relative to right now
     time_badge = compute_time_ago(art["datetime"], now_eastern)
     
     html_content += f'        <li>\n            <div class="link-row"><a href="{art["link"]}" target="_blank">{art["title"]}</a><span class="source">[{art["source"]}]</span></div>\n'
     
-    # Output layout containing relative interval data
     tag_build = f"posted: {time_badge}"
     if art["tags"]:
         tag_build += f" | tags: {' '.join([f'#{t}' for t in art['tags']])}"
@@ -211,4 +246,4 @@ html_content += """    </ul>
 with open("index.html", "w", encoding="utf-8") as f:
     f.write(html_content)
 
-print("Chronological site featuring relative time structures compiled successfully.")
+print("Timeline compiled successfully with domain sanity parsing rules.")
